@@ -1,0 +1,85 @@
+﻿@using Microsoft.AspNetCore.SignalR.Client
+@inherits LayoutComponentBase
+@implements IAsyncDisposable
+
+@inject IBlazorStrap BlazorStrap
+@inject NavigationManager NavigationManager
+
+<header class="app navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-1 shadow">
+    <BSNavbarBrand Class="col-md-3 col-lg-2 me-0 px-3">OpenAS2</BSNavbarBrand>
+    <BSNavbarToggle Class="position-absolute d-md-none" @ref="_toggler"></BSNavbarToggle>
+</header>
+
+<BSToaster />
+
+<BSContainer Container="Container.Fluid">
+    <BSRow>
+        <BSCollapse @ref="_collapse" Class="col-md-3 col-lg-2 d-md-block bg-light sidebar" i>
+            <div class="position-sticky pt-3">
+                <BSNav Class="flex-column">
+                    <BSNavItem OnClick="LinkClicked" Url="/dashboard/" ActiveOnChildRoutes="true"><i class="fa-solid fa-chart-line"></i> Dashboard</BSNavItem>
+                    <BSNavItem OnClick="LinkClicked" Url="/partners/" ActiveOnChildRoutes="true"><i class="fa-solid fa-user"></i> Partners</BSNavItem>
+                    <BSNavItem OnClick="LinkClicked" Url="/partnerships/" ActiveOnChildRoutes="true"><i class="fa-solid fa-handshake-simple"></i> Partnerships</BSNavItem>
+                    <BSNavItem OnClick="LinkClicked" Url="/certificates/" ActiveOnChildRoutes="true"><i class="fa-solid fa-key"></i> Certificates</BSNavItem>
+
+                    @*<BSNavItem Class="pt-5">
+                    <BSButton IsOutlined="true" Color="BSColor.Secondary" Size="Size.Small" OnClick="Logout">Sign out</BSButton>
+                    </BSNavItem>*@
+                </BSNav>
+            </div>
+        </BSCollapse>
+
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+
+            @Body
+        </main>
+    </BSRow>
+</BSContainer>
+
+@code {
+    private BSCollapse? _collapse;
+
+    private BSNavbarToggle? _toggler;
+
+    private HubConnection? hubConnection;
+
+    private async void LinkClicked()
+    {
+        if (_toggler?.CollapseParent != null)
+            await _toggler.CollapseParent.ToggleAsync();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/loghub"))
+            .Build();
+
+        hubConnection.On<string>("NewLogEntry", (message) =>
+        {
+            this.BlazorStrap.Toaster.Add(message, options =>
+            {
+                options.Color = BSColor.Info;
+                options.CloseAfter = 10000; // milliseconds
+            });
+        });
+
+        await hubConnection.StartAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        base.OnAfterRender(firstRender);
+
+        if (firstRender)
+            this._toggler!.CollapseParent = _collapse;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

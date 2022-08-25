@@ -1,0 +1,116 @@
+﻿@page "/partners/edit/{partnername}"
+@inject HttpClient HttpClient
+
+<div class="
+        d-flex
+        justify-content-between
+        flex-wrap flex-md-nowrap
+        align-items-center
+        pt-3
+        pb-2
+        mb-3
+        border-bottom
+      ">
+    <h1>@PartnerName - Edit Partner</h1>
+</div>
+
+@if (errorMsg == null && partnerDefinition != null)
+{
+    <BSForm Model="partnerDefinition" IsRow="true">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <BSLabel>Name:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="partnerDefinition.Name" ValidateOnInput="true" aria-describedby="nameHelp" />
+            <BSFeedback For="@(() => partnerDefinition.Name)" />
+            <div id="nameHelp" class="form-text">The name is only used internally and not send to the partner.</div>
+        </div>
+        <div class="mb-3">
+            <BSLabel>AS2 id:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="partnerDefinition.As2Id" ValidateOnInput="true" />
+            <BSFeedback For="@(() => partnerDefinition.As2Id)" />
+        </div>
+        <div class="mb-3">
+            <BSLabel>X509 alias:</BSLabel>
+            <BSInput InputType="InputType.Select" @bind-Value="partnerDefinition.X509Alias" style="@GetFontStyle()" ValidateOnInput="true">
+                @foreach (string certificate in certificates)
+                {
+                    <option value="@certificate">@certificate</option>
+                }
+                @if (!certificates.Contains(partnerDefinition.X509Alias))
+                {
+                    <option value="@partnerDefinition.X509Alias" style="font-style: italic">@partnerDefinition.X509Alias (not found!)</option>
+                }
+            </BSInput>
+            <BSFeedback For="@(() => partnerDefinition.X509Alias)" />
+        </div>
+        <div class="mb-3">
+            <BSLabel>X509 alias fallback:</BSLabel>
+            <BSInput InputType="InputType.Select" @bind-Value="partnerDefinition.X509AliasFallback" ValidateOnInput="true" aria-describedby="x509AliasFallbackHelp">
+                <option value="">(None)</option>
+                @foreach (string certificate in certificates)
+                {
+                    <option value="@certificate">@certificate</option>
+                }
+            </BSInput>
+            <BSFeedback For="@(() => partnerDefinition.X509AliasFallback)" />
+            <div id="x509AliasFallbackHelp" class="form-text">Optional. Support having 2 certificates for your partner definition. This allows switch over of your own certificate to be zero down time. See section "Overlapping Old And New Certificates When Changing" in the documentation.</div>
+        </div>
+        <div class="mb-3">
+            <BSLabel>E-Mail:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="partnerDefinition.Email" ValidateOnInput="true" />
+            <BSFeedback For="@(() => partnerDefinition.Email)" />
+        </div>
+    </BSForm>
+}
+else if (errorMsg != null)
+{
+    <BSAlert Color="BSColor.Danger" HasIcon="true">
+        @errorMsg
+    </BSAlert>
+}
+
+@code {
+    private string? errorMsg;
+
+    [Parameter]
+    public string PartnerName { get; set; } = null!;
+
+    private PartnerDefinition? partnerDefinition;
+
+    private List<string> certificates = new List<string>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+
+        try
+        {
+            partnerDefinition = await HttpClient.GetFromJsonAsync<PartnerDefinition>("partner/" + Uri.EscapeDataString(PartnerName));
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            errorMsg = "The partner was not found.";
+            return;
+        }
+        catch (Exception ex)
+        {
+            errorMsg = "Error loading partner: " + ex.Message;
+            return;
+        }
+
+        if (partnerDefinition?.KnownCertificates != null)
+        {
+            certificates = partnerDefinition.KnownCertificates;
+        }
+
+        errorMsg = null;
+    }
+
+    private string GetFontStyle()
+    {
+        if (partnerDefinition == null)
+            return string.Empty;
+
+        return (partnerDefinition.KnownCertificates?.Contains(partnerDefinition.X509Alias) ?? false) ? string.Empty : "font-weight: bold;";
+    }
+}

@@ -1,0 +1,149 @@
+﻿@page "/partnerships"
+@inject HttpClient HttpClient
+@inject NavigationManager navigationManager
+
+<PageTitle>Partnerships - OpenAS2</PageTitle>
+
+<div class="
+        d-flex
+        justify-content-between
+        flex-wrap flex-md-nowrap
+        align-items-center
+        pt-3
+        pb-2
+        mb-3
+        border-bottom
+      ">
+    <h1><i class="fa-solid fa-handshake-simple"></i> Partnerships</h1>
+
+    <BSButtonGroup>
+        <BSButton DataId="btnRefresh" IsOutlined="true" Color="BSColor.Secondary" Size="Size.Small" OnClick="UpdateData" IsDisabled="isLoading"><i class="fa-solid fa-rotate"></i></BSButton>
+        <BSTooltip Target="btnRefresh" Placement="Placement.Bottom">Refresh</BSTooltip>
+
+
+        @*Add the tooltip before the button. Otherwise the button won't get round corders because it is not the last element in the div*@
+        <BSTooltip Target="btnNew" Placement="Placement.Bottom">Add new partnership</BSTooltip>
+        <BSButton DataId="btnNew" IsOutlined="true" Color="BSColor.Secondary" Size="Size.Small" OnClick="AddNewPartnership"><i class="fa-solid fa-plus"></i></BSButton>
+    </BSButtonGroup>
+</div>
+
+<div>
+    @if (isLoading)
+    {
+        <div class="d-flex align-items-center justify-content-center">
+            <div class="spinner-border" role="status" aria-hidden="true"></div>
+            <strong class="ms-3">Loading...</strong>
+        </div>
+    }
+    else
+    {
+        @if (errorMsg == null)
+        {
+            <BSDataTable IsResponsive="true" IsStriped="true" IsSmall="true" FetchItems="FetchItems" PaginationBottom="true" RowsPerPage="rowsPerPage" Context="item">
+                <Header>
+                    <BSDataTableHead TValue="PartnershipItem" Sortable="true" Column="@(nameof(PartnershipItem.Name))" ColumnFilter="true" Class="form-control-sm">Name</BSDataTableHead>
+                    <BSDataTableHead TValue="PartnershipItem">Actions</BSDataTableHead>
+                </Header>
+                <Body>
+                    <BSDataTableRow>
+                        @{
+                            string partnershipEditUrl = $"/partnerships/edit/{Uri.EscapeDataString(item.Name)}";
+                            string partnershipDeleteUrl = $"/partnerships/delete/{Uri.EscapeDataString(item.Name)}";
+                        }
+                        <BSTD>@item.Name</BSTD>
+                        <BSTD>
+                            <BSLink Url="@partnershipEditUrl">Edit</BSLink>
+                            <BSLink Url="@partnershipDeleteUrl" Class="text-danger ms-3">Delete</BSLink>
+                        </BSTD>
+                    </BSDataTableRow>
+                </Body>
+            </BSDataTable>
+
+        }
+        else
+        {
+            <BSAlert Color="BSColor.Danger" HasIcon="true">
+                @errorMsg
+            </BSAlert>
+        }
+    }
+</div>
+
+@code {
+    private List<PartnershipItem> partnerships = new List<PartnershipItem>();
+
+    private bool isLoading = true;
+
+    private const int rowsPerPage = 20;
+
+    private string? errorMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+
+        await this.UpdateData();
+    }
+
+    private async Task UpdateData()
+    {
+        isLoading = true;
+        try
+        {
+            HttpResponseMessage msg = await HttpClient.GetAsync("api/partnership/");
+
+            if (msg.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                errorMsg = "Could not connect to OpenAS2-server: " + await msg.Content.ReadAsStringAsync();
+                isLoading = false;
+                return;
+            }
+
+            msg.EnsureSuccessStatusCode();
+
+            partnerships = (await msg.Content.ReadFromJsonAsync<string[]>())!.Select(p => new PartnershipItem(p)).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMsg = "Error loading data: " + ex.Message;
+            isLoading = false;
+            return;
+        }
+
+        errorMsg = null;
+        isLoading = false;
+    }
+
+    private void AddNewPartnership()
+    {
+
+    }
+
+    private Task<(IEnumerable<PartnershipItem>, int)> FetchItems(DataRequest dataRequest)
+    {
+        IEnumerable<PartnershipItem> data = this.partnerships;
+
+        if (dataRequest.FilterColumnProperty != null && dataRequest.Filter != null)
+        {
+            data = data.Where(c =>
+                    (dataRequest.FilterColumn == nameof(PartnershipItem.Name) && c.Name.Contains(dataRequest.Filter, StringComparison.InvariantCultureIgnoreCase))
+                );
+        }
+
+        data = data.ToList();
+        int count = data.Count();
+
+        if (dataRequest.SortColumnProperty != null)
+        {
+            if (dataRequest.Descending)
+                data = data.OrderByDescending(p => p.Name);
+            else
+                data = data.OrderBy(p => p.Name);
+        }
+
+        data = data.Skip(dataRequest.Page * rowsPerPage).Take(rowsPerPage).ToList();
+        return Task.FromResult((data, count));
+    }
+
+    private record PartnershipItem(string Name);
+}

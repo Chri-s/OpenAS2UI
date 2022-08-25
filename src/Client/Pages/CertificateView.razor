@@ -1,0 +1,137 @@
+﻿@page "/certificates/view/{certificatename}"
+@using System.Text
+@inject HttpClient HttpClient
+@inject ClipboardService ClipboardService
+
+<div class="
+        d-flex
+        justify-content-between
+        flex-wrap flex-md-nowrap
+        align-items-center
+        pt-3
+        pb-2
+        mb-3
+        border-bottom
+      ">
+    <h1>@CertificateName - View Certificate</h1>
+
+    <BSButtonGroup>
+        <BSButton DataId="btnCopy" IsOutlined="true" Color="BSColor.Secondary" Size="Size.Small" OnClick="CopyCertificateDataToClipboard"><i class="fa-solid fa-copy"></i></BSButton>
+        <BSTooltip Target="btnCopy" Placement="Placement.Bottom">Copy certificate to clipboard</BSTooltip>
+
+        @*Add the tooltip before the button. Otherwise the button won't get round corders because it is not the last element in the div*@
+        <BSTooltip Target="btnDownload" Placement="Placement.Bottom">Download certificate</BSTooltip>
+        <BSLink DataId="btnDownload" IsButton=true Url="@downloadLink" Attributes="downloadTarget" Size="Size.Small" Color="BSColor.Secondary" IsOutlined=true><i class="fa-solid fa-download"></i></BSLink>
+    </BSButtonGroup>
+</div>
+
+@if (errorMsg == null && certificateDefinition != null)
+{
+    <BSForm Model="certificateDefinition" IsRow="true">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <BSLabel>Alias:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.Alias" IsReadonly="true" aria-describedby="nameHelp" />
+            <div id="nameHelp" class="form-text">The name is only used internally and not send to the partner.</div>
+        </div>
+        <div class="mb-3">
+            <BSLabel>Issuer:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.Issuer" IsReadonly="true" />
+        </div>
+        <div class="mb-3">
+            <BSLabel>Created:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.NotBefore" IsReadonly="true" />
+        </div>
+        <div class="mb-3">
+            <BSLabel>Expires:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.NotAfter" IsReadonly="true" />
+        </div>
+        <div class="mb-3">
+            <BSLabel>Serial number:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.SerialNumber" IsReadonly="true" />
+        </div>
+        <div class="mb-3">
+            <BSLabel>Thumbprint:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.Thumbprint" IsReadonly="true" />
+        </div>
+        <div class="mb-3">
+            <BSLabel>Raw data:</BSLabel>
+            <BSInput InputType="InputType.TextArea" @bind-Value="certDataFormatted" TValue="string" IsReadonly="true" />
+        </div>
+    </BSForm>
+}
+else if (errorMsg != null)
+{
+    <BSAlert Color="BSColor.Danger" HasIcon="true">
+        @errorMsg
+    </BSAlert>
+}
+
+@code {
+    private string? errorMsg;
+
+    [Parameter]
+    public string CertificateName { get; set; } = null!;
+
+    private CertificateDefinition? certificateDefinition;
+
+    private string? certDataFormatted = null;
+
+    private string downloadLink = string.Empty;
+
+    private Dictionary<string, object> downloadTarget = new() { { "target", "_top" } };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+
+        downloadLink = "/certificate/download/" + Uri.EscapeDataString(CertificateName);
+
+        try
+        {
+            certificateDefinition = await HttpClient.GetFromJsonAsync<CertificateDefinition>("certificate/" + Uri.EscapeDataString(CertificateName));
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            errorMsg = "The partner was not found.";
+            return;
+        }
+        catch (Exception ex)
+        {
+            errorMsg = "Error loading partner: " + ex.Message;
+            return;
+        }
+
+        certDataFormatted = GetCertificateData();
+        errorMsg = null;
+    }
+
+    private string GetCertificateData()
+    {
+        if (certificateDefinition?.Data == null)
+            return string.Empty;
+
+        StringBuilder data = new StringBuilder("-----BEGIN CERTIFICATE-----");
+        data.AppendLine();
+
+        string base64 = Convert.ToBase64String(certificateDefinition.Data);
+
+        for (int i = 0; i < base64.Length; i += 64)
+        {
+            if (base64.Length > i + 64)
+                data.AppendLine(base64.Substring(i, 64));
+            else
+                data.AppendLine(base64.Substring(i));
+        }
+
+        data.AppendLine("-----END CERTIFICATE-----");
+
+        return data.ToString();
+    }
+
+    private async void CopyCertificateDataToClipboard()
+    {
+        if (this.certDataFormatted != null)
+            await this.ClipboardService.WriteTextAsync(this.certDataFormatted);
+    }
+}

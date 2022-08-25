@@ -1,0 +1,148 @@
+﻿@page "/certificates"
+@inject HttpClient HttpClient
+@inject NavigationManager navigationManager
+
+<PageTitle>Certificates - OpenAS2</PageTitle>
+
+<div class="
+        d-flex
+        justify-content-between
+        flex-wrap flex-md-nowrap
+        align-items-center
+        pt-3
+        pb-2
+        mb-3
+        border-bottom
+      ">
+    <h1><i class="fa-solid fa-key"></i> Certificates</h1>
+
+    <BSButtonGroup Class="mr-2">
+        <BSButton DataId="btnRefresh" IsOutlined="true" Color="BSColor.Secondary" Size="Size.Small" OnClick="UpdateData" IsDisabled="isLoading"><i class="fa-solid fa-rotate"></i></BSButton>
+        <BSTooltip Target="btnRefresh" Placement="Placement.Bottom">Refresh</BSTooltip>
+
+        @*Add the tooltip before the button. Otherwise the button won't get round corders because it is not the last element in the div*@
+        <BSTooltip Target="btnNew" Placement="Placement.Bottom">Add new certificate</BSTooltip>
+        <BSButton DataId="btnNew" IsOutlined="true" Color="BSColor.Secondary" Size="Size.Small" OnClick="AddNewCertificate"><i class="fa-solid fa-plus"></i></BSButton>
+    </BSButtonGroup>
+</div>
+
+<div>
+    @if (isLoading)
+    {
+        <div class="d-flex align-items-center justify-content-center">
+            <div class="spinner-border" role="status" aria-hidden="true"></div>
+            <strong class="ms-3">Loading...</strong>
+        </div>
+    }
+    else
+    {
+        @if (errorMsg == null)
+        {
+            <BSDataTable IsResponsive="true" IsStriped="true" IsSmall="true" FetchItems="FetchItems" PaginationBottom="true" RowsPerPage="rowsPerPage" Context="item">
+                <Header>
+                    <BSDataTableHead TValue="CertificateItem" Sortable="true" Column="@(nameof(CertificateItem.Name))" ColumnFilter="true" Class="form-control-sm">Name</BSDataTableHead>
+                    <BSDataTableHead TValue="CertificateItem">Actions</BSDataTableHead>
+                </Header>
+                <Body>
+                    <BSDataTableRow>
+                        @{
+                            string certificateEditUrl = $"/certificates/view/{Uri.EscapeDataString(item.Name)}";
+                            string certificateDeleteUrl = $"/certificates/delete/{Uri.EscapeDataString(item.Name)}";
+                        }
+                        <BSTD>@item.Name</BSTD>
+                        <BSTD>
+                            <BSLink Url="@certificateEditUrl">View</BSLink>
+                            <BSLink Url="@certificateDeleteUrl" Class="text-danger ms-3">Delete</BSLink>
+                        </BSTD>
+                    </BSDataTableRow>
+                </Body>
+            </BSDataTable>
+
+        }
+        else
+        {
+            <BSAlert Color="BSColor.Danger" HasIcon="true">
+                @errorMsg
+            </BSAlert>
+        }
+    }
+</div>
+
+@code {
+    private List<CertificateItem> certificates = new List<CertificateItem>();
+
+    private bool isLoading = true;
+
+    private const int rowsPerPage = 20;
+
+    private string? errorMsg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+
+        await this.UpdateData();
+    }
+
+    private async Task UpdateData()
+    {
+        isLoading = true;
+        try
+        {
+            HttpResponseMessage msg = await HttpClient.GetAsync("certificate/");
+
+            if (msg.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                errorMsg = "Could not connect to OpenAS2-server: " + await msg.Content.ReadAsStringAsync();
+                isLoading = false;
+                return;
+            }
+
+            msg.EnsureSuccessStatusCode();
+
+            certificates = (await msg.Content.ReadFromJsonAsync<string[]>())!.Select(p => new CertificateItem(p)).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMsg = "Error loading data: " + ex.Message;
+            isLoading = false;
+            return;
+        }
+
+        errorMsg = null;
+        isLoading = false;
+    }
+
+    private void AddNewCertificate()
+    {
+
+    }
+
+    private Task<(IEnumerable<CertificateItem>, int)> FetchItems(DataRequest dataRequest)
+    {
+        IEnumerable<CertificateItem> data = this.certificates;
+
+        if (dataRequest.FilterColumnProperty != null && dataRequest.Filter != null)
+        {
+            data = data.Where(c =>
+                    (dataRequest.FilterColumn == nameof(CertificateItem.Name) && c.Name.Contains(dataRequest.Filter, StringComparison.InvariantCultureIgnoreCase))
+                );
+        }
+
+        data = data.ToList();
+        int count = data.Count();
+
+        if (dataRequest.SortColumnProperty != null)
+        {
+            if (dataRequest.Descending)
+                data = data.OrderByDescending(c => c.Name);
+            else
+                data = data.OrderBy(c => c.Name);
+        }
+
+        data = data.Skip(dataRequest.Page * rowsPerPage).Take(rowsPerPage).ToList();
+        return Task.FromResult((data, count));
+    }
+
+    private record CertificateItem(string Name);
+}

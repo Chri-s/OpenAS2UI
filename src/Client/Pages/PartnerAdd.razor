@@ -1,0 +1,145 @@
+﻿@page "/partners/add/"
+@inject BlazorStrap.IBlazorStrap _blazorStrap
+@inject NavigationManager navigationManager
+
+<BSToaster />
+
+<div class="
+        d-flex
+        justify-content-between
+        flex-wrap flex-md-nowrap
+        align-items-center
+        pt-3
+        pb-2
+        mb-3
+        border-bottom
+      ">
+    <h1>Add Partner</h1>
+</div>
+
+@if (errorMsg == null && partnerDefinition != null)
+{
+    <BSForm Model="partnerDefinition" IsRow="true" OnSubmit="SavePartner">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <BSLabel>Name:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="partnerDefinition.Name" ValidateOnInput="true" aria-describedby="nameHelp" />
+            <BSFeedback For="@(() => partnerDefinition.Name)" />
+            <div id="nameHelp" class="form-text">The name is only used internally and not send to the partner.</div>
+        </div>
+        <div class="mb-3">
+            <BSLabel>AS2 id:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="partnerDefinition.As2Id" ValidateOnInput="true" />
+            <BSFeedback For="@(() => partnerDefinition.As2Id)" />
+        </div>
+        <div class="mb-3">
+            <BSLabel>X509 alias:</BSLabel>
+            <BSInput InputType="InputType.Select" @bind-Value="partnerDefinition.X509Alias" ValidateOnInput="true">
+                @if (string.IsNullOrEmpty(partnerDefinition.X509Alias))
+                {
+                    <option value=""></option>
+                }
+                @foreach (string certificate in certificates)
+                {
+                    <option value="@certificate">@certificate</option>
+                }
+            </BSInput>
+            <BSFeedback For="@(() => partnerDefinition.X509Alias)" />
+        </div>
+        <div class="mb-3">
+            <BSLabel>X509 alias fallback:</BSLabel>
+            <BSInput InputType="InputType.Select" @bind-Value="partnerDefinition.X509AliasFallback" ValidateOnInput="true" aria-describedby="x509AliasFallbackHelp">
+                <option value="">(None)</option>
+                @foreach (string certificate in certificates)
+                {
+                    <option value="@certificate">@certificate</option>
+                }
+            </BSInput>
+            <BSFeedback For="@(() => partnerDefinition.X509AliasFallback)" />
+            <div id="x509AliasFallbackHelp" class="form-text">Optional. Support having 2 certificates for your partner definition. This allows switch over of your own certificate to be zero down time. See section "Overlapping Old And New Certificates When Changing" in the documentation.</div>
+        </div>
+        <div class="mb-3">
+            <BSLabel>E-Mail:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="partnerDefinition.Email" ValidateOnInput="true" />
+            <BSFeedback For="@(() => partnerDefinition.Email)" />
+        </div>
+
+        <div class="btn-toolbar mb-2 mb-md-0">
+            <BSButtonGroup Class="mr-2">
+                <BSButton Color="BSColor.Primary" IsSubmit="true">Add Partner</BSButton>
+                <BSButton IsOutlined="false" IsLink="true" OnClick="Cancel">Cancel</BSButton>
+            </BSButtonGroup>
+        </div>
+    </BSForm>
+}
+else
+{
+    <BSAlert Color="BSColor.Danger" HasIcon="true">
+        @errorMsg
+    </BSAlert>
+}
+
+@code {
+    private string? errorMsg;
+
+    private bool isSubmitting = false;
+
+    [Parameter]
+    public string PartnerName { get; set; } = null!;
+
+    private PartnerDefinition partnerDefinition = new PartnerDefinition();
+
+    private string[] certificates = new string[0];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+
+        try
+        {
+            certificates = await dataService.GetCertificatesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMsg = "Error loading certificates: " + ex.Message;
+            return;
+        }
+
+        errorMsg = null;
+    }
+
+    private async void SavePartner(EditContext e)
+    {
+        if (isSubmitting)
+        {
+            _blazorStrap.Toaster.Add("Can't add partner, already submitting.", options => options.Color = BSColor.Danger);
+            return;
+        }
+
+        isSubmitting = true;
+
+        try
+        {
+            if (!e.Validate())
+                return;
+
+            await dataService.AddPartnerAsync(this.partnerDefinition);
+            await dataService.StorePartnershipsAsync();
+
+            navigationManager.NavigateTo("/partners");
+        }
+        catch (Exception ex)
+        {
+            _blazorStrap.Toaster.Add("Error adding partner.", ex.Message, options => options.Color = BSColor.Danger);
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private void Cancel()
+    {
+        navigationManager.NavigateTo("/partners");
+    }
+}

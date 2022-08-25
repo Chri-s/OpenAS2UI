@@ -1,0 +1,13 @@
+﻿@page "/"
+@inject NavigationManager NavigationManager
+
+<PageTitle>OpenAS2</PageTitle>
+
+@code {
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+
+        NavigationManager.NavigateTo("/dashboard/", false, true);
+    }
+}
