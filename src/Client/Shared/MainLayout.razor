@@ -5,7 +5,7 @@
 @inject IBlazorStrap BlazorStrap
 @inject NavigationManager NavigationManager
 
-<header class="app navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-1 shadow">
+<header class="app navbar sticky-top navbar-dark bg-primary flex-md-nowrap p-1 shadow">
     <BSNavbarBrand Class="col-md-3 col-lg-2 me-0 px-3">OpenAS2</BSNavbarBrand>
     <BSNavbarToggle Class="position-absolute d-md-none" @ref="_toggler"></BSNavbarToggle>
 </header>
@@ -73,6 +73,14 @@
 
         if (firstRender)
             this._toggler!.CollapseParent = _collapse;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+
+        if (firstRender)
+            await BlazorStrap.SetBootstrapCss(Theme.Cerulean, "5.2.0");
     }
 
     public async ValueTask DisposeAsync()

@@ -17,12 +17,12 @@
     <h1><i class="fa-solid fa-key"></i> Certificates</h1>
 
     <BSButtonGroup Class="mr-2">
-        <BSButton DataId="btnRefresh" IsOutlined="true" Color="BSColor.Secondary" Size="Size.Small" OnClick="UpdateData" IsDisabled="isLoading"><i class="fa-solid fa-rotate"></i></BSButton>
+        <BSButton DataId="btnRefresh" Color="BSColor.Secondary" Size="Size.Small" OnClick="UpdateData" IsDisabled="isLoading"><i class="fa-solid fa-rotate"></i></BSButton>
         <BSTooltip Target="btnRefresh" Placement="Placement.Bottom">Refresh</BSTooltip>
 
         @*Add the tooltip before the button. Otherwise the button won't get round corders because it is not the last element in the div*@
         <BSTooltip Target="btnNew" Placement="Placement.Bottom">Add new certificate</BSTooltip>
-        <BSButton DataId="btnNew" IsOutlined="true" Color="BSColor.Secondary" Size="Size.Small" OnClick="AddNewCertificate"><i class="fa-solid fa-plus"></i></BSButton>
+        <BSButton DataId="btnNew" Color="BSColor.Secondary" Size="Size.Small" OnClick="AddNewCertificate"><i class="fa-solid fa-plus"></i></BSButton>
     </BSButtonGroup>
 </div>
 

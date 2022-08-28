@@ -8,9 +8,15 @@
       "destination": "wwwroot/lib/fortawesome/fontawesome-free/"
     },
     {
-      "provider": "cdnjs",
       "library": "bootstrap@5.2.0",
       "destination": "wwwroot/lib/bootstrap/"
+    },
+    {
+      "library": "bootswatch@5.2.0",
+      "destination": "wwwroot/lib/bootswatch/",
+      "files": [
+        "cerulean/bootstrap.min.css"
+      ]
     }
   ]
 }
