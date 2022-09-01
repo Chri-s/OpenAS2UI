@@ -1,7 +1,15 @@
 ﻿@page "/certificates/view/{certificatename}"
 @using System.Text
+@using System.Security.Cryptography
+
+@using System.Text.Encodings.Web
+@using OpenAS2UI.Client.Shared
+@using global::FluentValidation
+@using BlazorStrap.Extensions.FluentValidation
 @inject HttpClient HttpClient
 @inject ClipboardService ClipboardService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
 
 <div class="
         d-flex
@@ -16,68 +24,187 @@
     <h1>@CertificateName - View Certificate</h1>
 
     <BSButtonGroup>
-        <BSButton DataId="btnCopy" IsOutlined="true" Color="BSColor.Secondary" Size="Size.Small" OnClick="CopyCertificateDataToClipboard"><i class="fa-solid fa-copy"></i></BSButton>
+        <BSButton DataId="btnDelete" Color="BSColor.Danger" Size="Size.Small" Target="deleteModal" IsDisabled="certificateDefinition == null"><i class="fa-solid fa-xmark"></i></BSButton>
+        <BSTooltip Target="btnDelete" Placement="Placement.Bottom">Delete the certificate</BSTooltip>
+
+        <BSButton DataId="btnCopy" Color="BSColor.Secondary" Size="Size.Small" OnClick="CopyCertificateDataToClipboard"><i class="fa-solid fa-copy"></i></BSButton>
         <BSTooltip Target="btnCopy" Placement="Placement.Bottom">Copy certificate to clipboard</BSTooltip>
+
+        <BSButton DataId="btnDownloadPrivateKey" Color="BSColor.Secondary" IsDisabled="!(certificateDefinition?.HasPrivateKey ?? false)" IsOutlined="!(certificateDefinition?.HasPrivateKey ?? false)" Size="Size.Small" Target="exportModelModal"><i class="fa-solid fa-key"></i></BSButton>
+        <BSTooltip Target="btnDownloadPrivateKey" Placement="Placement.Bottom">Download private key</BSTooltip>
 
         @*Add the tooltip before the button. Otherwise the button won't get round corders because it is not the last element in the div*@
         <BSTooltip Target="btnDownload" Placement="Placement.Bottom">Download certificate</BSTooltip>
-        <BSLink DataId="btnDownload" IsButton=true Url="@downloadLink" Attributes="downloadTarget" Size="Size.Small" Color="BSColor.Secondary" IsOutlined=true><i class="fa-solid fa-download"></i></BSLink>
+        <BSLink DataId="btnDownload" IsButton=true Url="@downloadLink" Attributes="downloadTarget" Size="Size.Small" Color="BSColor.Secondary"><i class="fa-solid fa-download"></i></BSLink>
     </BSButtonGroup>
 </div>
+
+@* **********************************************
+   This modal is shown to get the export password
+   **********************************************
+*@
+<BSModal DataId="exportModelModal" IsStaticBackdrop="true" @ref="exportModal">
+    <BSForm Model="exportModel" OnValidSubmit="DownloadPrivateKey">
+        <FluentValidator TValidator="CertificateExportModelValidator" />
+        <BSModalHeader>Export private key</BSModalHeader>
+        <BSModalContent>
+            <div class="mb-3">You need to set an export passwort to export the private key. This password is needed to import the private key.</div>
+            <div class="mb-3">
+                <BSInput InputType="InputType.Password" placeholder="Export password" @bind-Value="exportModel.ExportPassword" />
+                <ValidationMessage For="@(() => exportModel.ExportPassword)" />
+            </div>
+            <div class="mb-3">
+                <BSInput InputType="InputType.Password" placeholder="Export password confirmation" @bind-Value="exportModel.ExportPasswordConfirmation" />
+                <ValidationMessage For="@(() => exportModel.ExportPasswordConfirmation)" />
+            </div>
+        </BSModalContent>
+        <BSModalFooter>
+            <BSButton Target="exportModelModal">Cancel</BSButton>
+            <BSButton IsSubmit="true" Color="BSColor.Primary">Export</BSButton>
+        </BSModalFooter>
+    </BSForm>
+</BSModal>
+
+@* **********************************************************
+   This modal is shown if an error occurred
+   **********************************************************
+*@
+<BSModal DataId="errorModal" @ref="errorModal">
+    <BSModalHeader>Error</BSModalHeader>
+    <BSModalContent>
+        <BSAlert Color="BSColor.Danger">@errorModalMsg</BSAlert>
+    </BSModalContent>
+    <BSModalFooter>
+        <BSButton Target="errorModal" Color="BSColor.Primary">Close</BSButton>
+    </BSModalFooter>
+</BSModal>
+
+@* **********************************************************
+   This modal is shown for deleting the certificate
+   **********************************************************
+*@
+<BSModal DataId="deleteModal" @ref="deleteModal">
+    <Header><span class="text-danger">Delete certificate</span></Header>
+    <Content>
+        Do you really want to delete the certificate <span class="fw-bold">"@CertificateName"</span>?
+
+        @if (certificateDefinition?.UsedBy?.Count > 0)
+        {
+            <BSAlert Color="BSColor.Danger" Class="mt-3">The certificate is used by at least one Partner.</BSAlert>
+        }
+        else
+        {
+            <BSAlert Color="BSColor.Info" Class="mt-3">The certificate is not used by any Partner.</BSAlert>
+        }
+    </Content>
+    <Footer Context="modal">
+        <BSButton MarginStart="Margins.Auto" Color="BSColor.Secondary" @onclick="modal.HideAsync">Cancel</BSButton>
+        <BSButton Color="BSColor.Danger" OnClick="DeleteCertificate">Delete certificate</BSButton>
+    </Footer>
+</BSModal>
 
 @if (errorMsg == null && certificateDefinition != null)
 {
     <BSForm Model="certificateDefinition" IsRow="true">
-        <DataAnnotationsValidator />
         <div class="mb-3">
-            <BSLabel>Alias:</BSLabel>
-            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.Alias" IsReadonly="true" aria-describedby="nameHelp" />
+            <div class="fw-bold">Alias:</div>
+            <div>@certificateDefinition.Alias</div>
             <div id="nameHelp" class="form-text">The name is only used internally and not send to the partner.</div>
         </div>
         <div class="mb-3">
-            <BSLabel>Issuer:</BSLabel>
-            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.Issuer" IsReadonly="true" />
+            <div class="fw-bold">Subject:</div>
+            <div>@certificateDefinition.Subject</div>
         </div>
         <div class="mb-3">
-            <BSLabel>Created:</BSLabel>
-            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.NotBefore" IsReadonly="true" />
+            <div class="fw-bold">Issuer:</div>
+            <div>@certificateDefinition.Issuer</div>
         </div>
         <div class="mb-3">
-            <BSLabel>Expires:</BSLabel>
-            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.NotAfter" IsReadonly="true" />
+            <div class="fw-bold">Valid from:</div>
+            <div>@validFrom</div>
         </div>
         <div class="mb-3">
-            <BSLabel>Serial number:</BSLabel>
-            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.SerialNumber" IsReadonly="true" />
+            <div class="fw-bold">Expires:</div>
+            <div>
+                @expires
+                @if (certificateDefinition.NotAfter < DateTimeOffset.Now)
+                {
+                    <BSBadge Color="BSColor.Danger" IsPill="true" Class="ms-2">Expired</BSBadge>
+                }
+                else if (@certificateDefinition.NotAfter < DateTimeOffset.Now.AddMonths(1))
+                {
+                    <BSBadge Color="BSColor.Warning" IsPill="true" Class="ms-2">Expires soon</BSBadge>
+                }
+            </div>
         </div>
         <div class="mb-3">
-            <BSLabel>Thumbprint:</BSLabel>
-            <BSInput InputType="InputType.Text" @bind-Value="certificateDefinition.Thumbprint" IsReadonly="true" />
+            <div class="fw-bold">Serial number:</div>
+            <div>@certificateDefinition.SerialNumber</div>
         </div>
         <div class="mb-3">
-            <BSLabel>Raw data:</BSLabel>
-            <BSInput InputType="InputType.TextArea" @bind-Value="certDataFormatted" TValue="string" IsReadonly="true" />
+            <div class="fw-bold">Thumbprint:</div>
+            <div>@thumbPrint</div>
+        </div>
+        <div class="mb-3">
+            <div class="fw-bold"><BSLink Target="rawDataCollapse">Raw data:</BSLink></div>
+            <BSCollapse DataId="rawDataCollapse">
+                <BSCard CardType="CardType.Card">
+                    @((MarkupString)certDataFormatted!)
+                </BSCard>
+            </BSCollapse>
+        </div>
+        <div class="mb-3">
+            <BSLink Url="/certificates/"><i class="fa-solid fa-arrow-left"></i> Back to certificate list</BSLink>
         </div>
     </BSForm>
+
+    @if (certificateDefinition.UsedBy?.Count > 0)
+    {
+        <div class="border-bottom mb-3 mt-5">
+            <h6 class="h6">This certificate is used by these partners</h6>
+        </div>
+        <BSListGroup>
+            @foreach (PartnerDefinition partner in certificateDefinition.UsedBy)
+            {
+                <BSListGroupItem>@partner.Name</BSListGroupItem>
+            }
+        </BSListGroup>
+    }
+    else
+    {
+        <BSAlert Color="BSColor.Info">This certificate is not used by any partner.</BSAlert>
+    }
 }
 else if (errorMsg != null)
 {
-    <BSAlert Color="BSColor.Danger" HasIcon="true">
+    <BSAlert Color="BSColor.Danger" Class="mt-5" HasIcon="true">
         @errorMsg
     </BSAlert>
+}
+else if (certificateDefinition == null)
+{
+    <SpinnerRow />
 }
 
 @code {
     private string? errorMsg;
+    private string? errorModalMsg;
+
+    private BSModal? exportModal;
+    private BSModal? errorModal;
+    private BSModal? deleteModal;
 
     [Parameter]
     public string CertificateName { get; set; } = null!;
 
+    private CertificateExportModel exportModel = new CertificateExportModel();
     private CertificateDefinition? certificateDefinition;
 
     private string? certDataFormatted = null;
-
     private string downloadLink = string.Empty;
+    private string validFrom = string.Empty;
+    private string expires = string.Empty;
+    private string thumbPrint = string.Empty;
 
     private Dictionary<string, object> downloadTarget = new() { { "target", "_top" } };
 
@@ -85,53 +212,119 @@ else if (errorMsg != null)
     {
         await base.OnInitializedAsync();
 
-        downloadLink = "/certificate/download/" + Uri.EscapeDataString(CertificateName);
-
         try
         {
-            certificateDefinition = await HttpClient.GetFromJsonAsync<CertificateDefinition>("certificate/" + Uri.EscapeDataString(CertificateName));
+            certificateDefinition = await HttpClient.GetFromJsonAsync<CertificateDefinition>("api/certificate/" + Uri.EscapeDataString(CertificateName));
+            validFrom = certificateDefinition!.NotBefore.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            expires = certificateDefinition!.NotAfter.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            thumbPrint = string.Join(' ', SHA1.HashData(certificateDefinition.PublicKey).Select(b => b.ToString("x2")));
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
-            errorMsg = "The partner was not found.";
+            errorMsg = "The certificate was not found.";
             return;
         }
         catch (Exception ex)
         {
-            errorMsg = "Error loading partner: " + ex.Message;
+            errorMsg = "Error loading certificate: " + ex.Message;
             return;
         }
 
-        certDataFormatted = GetCertificateData();
+        downloadLink = "data:application/x-x509-ca-cert;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(GetCertificateData()));
+        downloadTarget.Add("download", CertificateName + ".cer");
+
+        certDataFormatted = HtmlEncoder.Default.Encode(GetCertificateData()).Replace("&#xA;", "<br/>");
         errorMsg = null;
     }
 
     private string GetCertificateData()
     {
-        if (certificateDefinition?.Data == null)
+        if (certificateDefinition?.PublicKey == null)
             return string.Empty;
 
-        StringBuilder data = new StringBuilder("-----BEGIN CERTIFICATE-----");
-        data.AppendLine();
+        StringBuilder data = new StringBuilder("-----BEGIN CERTIFICATE-----\n");
 
-        string base64 = Convert.ToBase64String(certificateDefinition.Data);
+        string base64 = Convert.ToBase64String(certificateDefinition.PublicKey);
 
         for (int i = 0; i < base64.Length; i += 64)
         {
             if (base64.Length > i + 64)
-                data.AppendLine(base64.Substring(i, 64));
+                data.Append(base64.Substring(i, 64)).Append("\n");
             else
-                data.AppendLine(base64.Substring(i));
+                data.Append(base64.Substring(i)).Append("\n");
         }
 
-        data.AppendLine("-----END CERTIFICATE-----");
+        data.AppendLine("-----END CERTIFICATE-----\n");
 
         return data.ToString();
+    }
+
+    private async void DownloadPrivateKey()
+    {
+        FormUrlEncodedContent content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("exportPassword", exportModel.ExportPassword)
+    });
+
+        try
+        {
+            using var response = await HttpClient.PostAsync("api/certificate/" + Uri.EscapeDataString(CertificateName) + "/privatekey/", content);
+
+            response.EnsureSuccessStatusCode();
+
+            using var streamRef = new DotNetStreamReference(response.Content.ReadAsStream());
+
+            await JS.InvokeVoidAsync("downloadFileFromStream", CertificateName + ".p12", streamRef);
+
+            await this.exportModal!.HideAsync();
+        }
+        catch (Exception ex)
+        {
+            errorModalMsg = "An error occurred while downloading the private key: " + ex.Message;
+            await this.exportModal!.HideAsync();
+
+            await this.errorModal!.ShowAsync();
+        }
     }
 
     private async void CopyCertificateDataToClipboard()
     {
         if (this.certDataFormatted != null)
-            await this.ClipboardService.WriteTextAsync(this.certDataFormatted);
+            await this.ClipboardService.WriteTextAsync(GetCertificateData());
+    }
+
+    private async void DeleteCertificate()
+    {
+        try
+        {
+            using var response = await HttpClient.DeleteAsync("api/certificate/" + Uri.EscapeDataString(CertificateName));
+
+            response.EnsureSuccessStatusCode();
+
+            NavigationManager.NavigateTo("/certificates/");
+        }
+        catch (Exception ex)
+        {
+            errorModalMsg = "Error deleting certificate: " + ex.Message;
+
+            await this.deleteModal!.HideAsync();
+            await this.errorModal!.ShowAsync();
+        }
+    }
+
+    private class CertificateExportModel
+    {
+        public string ExportPassword { get; set; } = string.Empty;
+
+        public string ExportPasswordConfirmation { get; set; } = string.Empty;
+    }
+
+    private class CertificateExportModelValidator : AbstractValidator<CertificateExportModel>
+    {
+        public CertificateExportModelValidator()
+        {
+            RuleFor(export => export.ExportPassword).NotEmpty();
+            RuleFor(export => export.ExportPasswordConfirmation).NotEmpty().Equal(export => export.ExportPassword).WithMessage("Password confirmation must be equal to the password.");
+        }
     }
 }

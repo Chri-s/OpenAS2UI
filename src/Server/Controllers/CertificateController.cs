@@ -1,113 +1,121 @@
-﻿using System.Security.Cryptography.X509Certificates;
+﻿using System.Net.Mime;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using OpenAS2UI.Shared;
 
 namespace OpenAS2UI.Server.Controllers
 {
     [ApiController]
-    [Route("[controller]")]
+    [Route("api/[controller]")]
     public class CertificateController : ControllerBase
     {
-        private DataService _dataService;
+        private OpenAs2Client _client;
 
-        public CertificateController(DataService dataService)
+        public CertificateController(OpenAs2Client client)
         {
-            _dataService = dataService;
+            _client = client;
         }
 
         [HttpGet]
         public async Task<ActionResult> Get()
         {
-            string[]? certificates = null;
+            ICollection<Certificate>? certificates = null;
             try
             {
-                certificates = await _dataService.GetCertificatesAsync();
+                certificates = await _client.CertificatesAllAsync();
+            }
+            catch (ApiException<ErrorObject> ex)
+            {
+                return this.StatusCode(ex.StatusCode, ex.Result);
             }
             catch (HttpRequestException ex)
             {
-                return this.BadRequest(ex.Message);
+                return this.ServiceUnavailable(new ErrorObject() { ErrorMessage = ex.Message });
             }
 
-            return this.Ok(certificates);
+            return this.Ok(certificates.Select(c => c.ToCertificateDefinition()));
         }
 
-        [HttpGet("{id}")]
-        public async Task<ActionResult> Get(string id)
+        [HttpGet("{alias}/")]
+        public async Task<ActionResult> Get(string alias)
         {
-            CertificateDefinition? certificate = null;
+            CertificateDefinition certificateDefinition;
             try
             {
-                certificate = await _dataService.GetCertificateAsync(id);
+                Certificate certificate = await _client.CertificatesGETAsync(alias);
 
-                if (certificate != null)
-                {
-                    try
-                    {
-                        using (X509Certificate2 cert = new X509Certificate2(certificate.Data))
-                        {
-                            certificate.SerialNumber = cert.SerialNumber;
-                            certificate.Issuer = cert.Issuer;
-                            certificate.NotAfter = cert.NotAfter;
-                            certificate.NotBefore = cert.NotBefore;
-                            certificate.Thumbprint = cert.Thumbprint;
-                        }
-                        
-                    }
-                    catch
-                    {
-                        // Do nothing, couldn't parse certificate
-                    }
-                }
+                certificateDefinition = certificate.ToCertificateDefinition();
+                certificateDefinition.UsedBy = (await _client.UsedbyAsync(alias)).Select(p => p.ToPartnerDefinition()).ToList();
+
+                return this.Ok(certificateDefinition);
             }
-            catch (ResultLoadingException ex)
+            catch (ApiException<ErrorObject> ex)
             {
-                if (ex.Message.Trim().Equals("Unknown partner name", StringComparison.OrdinalIgnoreCase))
-                    return this.NotFound(ex.Message);
-
-                return this.BadRequest(ex.Message);
+                return this.StatusCode(ex.StatusCode, ex.Result);
             }
-
-            return this.Ok(certificate);
+            catch (HttpRequestException ex)
+            {
+                return this.ServiceUnavailable(new ErrorObject() { ErrorMessage = ex.Message });
+            }
         }
 
-        [HttpGet("download/{id}")]
-        public async Task<ActionResult> Download(string id)
+        [HttpPost("{alias}/privatekey/")]
+        public async Task<ActionResult> DownloadPrivateKey(string alias, [FromForm] string exportPassword)
         {
-            CertificateDefinition? certificate = null;
             try
             {
-                certificate = await _dataService.GetCertificateAsync(id);
+                Certificate certificate = await _client.PrivatekeyAsync(alias, new Pkcs12Export() { ExportPassword = exportPassword });
 
-                if (certificate != null)
-                {
-                    StringBuilder data = new StringBuilder("-----BEGIN CERTIFICATE-----");
-                    data.AppendLine();
-
-                    string base64 = Convert.ToBase64String(certificate.Data);
-
-                    for (int i = 0; i < base64.Length; i += 64)
-                    {
-                        if (base64.Length > i + 64)
-                            data.AppendLine(base64.Substring(i, 64));
-                        else
-                            data.AppendLine(base64.Substring(i));
-                    }
-
-                    data.AppendLine("-----END CERTIFICATE-----");
-
-                    return this.File(Encoding.UTF8.GetBytes(data.ToString()), "application/x-x509-ca-cert", id + ".cer");
-                }
+                return File(certificate.Pkcs12Container!, "application/octet-stream");
             }
-            catch (ResultLoadingException ex)
+            catch (ApiException<ErrorObject> ex)
             {
-                if (ex.Message.Trim().Equals("Unknown partner name", StringComparison.OrdinalIgnoreCase))
-                    return this.NotFound(ex.Message);
-
-                return this.BadRequest(ex.Message);
+                return this.StatusCode(ex.StatusCode, ex.Result);
             }
+            catch (HttpRequestException ex)
+            {
+                return this.ServiceUnavailable(new ErrorObject() { ErrorMessage = ex.Message });
+            }
+        }
 
-            return this.NotFound();
+        [HttpDelete("{alias}/")]
+        public async Task<ActionResult> DeleteCertificate(string alias)
+        {
+            try
+            {
+                await _client.CertificatesDELETEAsync(alias);
+
+                return Ok();
+            }
+            catch (ApiException<ErrorObject> ex)
+            {
+                return this.StatusCode(ex.StatusCode, ex.Result);
+            }
+            catch (HttpRequestException ex)
+            {
+                return this.ServiceUnavailable(new ErrorObject() { ErrorMessage = ex.Message });
+            }
+        }
+
+        [HttpPost]
+        public async Task<ActionResult> ImportCertificate(CertificateImportDefinition certificateImport)
+        {
+            try
+            {
+                Certificate certificate = await _client.CertificatesPOSTAsync(certificateImport.ToCertificateImport());
+
+                return Ok(certificate);
+            }
+            catch (ApiException<ErrorObject> ex)
+            {
+                return this.StatusCode(ex.StatusCode, ex.Result);
+            }
+            catch (HttpRequestException ex)
+            {
+                return this.ServiceUnavailable(new ErrorObject() { ErrorMessage = ex.Message });
+            }
         }
     }
 }

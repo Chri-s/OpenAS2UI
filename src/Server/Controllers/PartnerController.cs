@@ -4,7 +4,7 @@ using OpenAS2UI.Shared;
 namespace OpenAS2UI.Server.Controllers
 {
     [ApiController]
-    [Route("[controller]")]
+    [Route("api/[controller]")]
     public class PartnerController : ControllerBase
     {
         private DataService _dataService;

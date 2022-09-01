@@ -1,4 +1,5 @@
 ﻿@page "/certificates"
+@using OpenAS2UI.Client.Shared
 @inject HttpClient HttpClient
 @inject NavigationManager navigationManager
 
@@ -16,43 +17,62 @@
       ">
     <h1><i class="fa-solid fa-key"></i> Certificates</h1>
 
-    <BSButtonGroup Class="mr-2">
-        <BSButton DataId="btnRefresh" Color="BSColor.Secondary" Size="Size.Small" OnClick="UpdateData" IsDisabled="isLoading"><i class="fa-solid fa-rotate"></i></BSButton>
-        <BSTooltip Target="btnRefresh" Placement="Placement.Bottom">Refresh</BSTooltip>
+    <div class="mr-2">
+        <BSButtonGroup>
+            <BSInput InputType="InputType.Text" InputSize="Size.Small" Value="customFilter" placeholder="Filter" Class="mr-2" ValueChanged="(string e) => CustomFilter(e)"></BSInput>
+        </BSButtonGroup>
 
-        @*Add the tooltip before the button. Otherwise the button won't get round corders because it is not the last element in the div*@
-        <BSTooltip Target="btnNew" Placement="Placement.Bottom">Add new certificate</BSTooltip>
-        <BSButton DataId="btnNew" Color="BSColor.Secondary" Size="Size.Small" OnClick="AddNewCertificate"><i class="fa-solid fa-plus"></i></BSButton>
-    </BSButtonGroup>
+        <BSButtonGroup Class="mr-2">
+            <BSButton DataId="btnRefresh" Color="BSColor.Secondary" Size="Size.Small" OnClick="UpdateData" IsDisabled="isLoading"><i class="fa-solid fa-rotate"></i></BSButton>
+            <BSTooltip Target="btnRefresh" Placement="Placement.Bottom">Refresh</BSTooltip>
+
+            @*Add the tooltip before the button. Otherwise the button won't get round corders because it is not the last element in the div*@
+            <BSTooltip Target="btnNew" Placement="Placement.Bottom">Import certificate</BSTooltip>
+            <BSLink IsButton="true" Url="/certificates/import/" Color="BSColor.Secondary" DataId="btnNew" Size="Size.Small"><i class="fa-solid fa-plus"></i></BSLink>
+        </BSButtonGroup>
+    </div>
 </div>
 
 <div>
     @if (isLoading)
     {
-        <div class="d-flex align-items-center justify-content-center">
-            <div class="spinner-border" role="status" aria-hidden="true"></div>
-            <strong class="ms-3">Loading...</strong>
-        </div>
+        <SpinnerRow />
     }
     else
     {
         @if (errorMsg == null)
         {
-            <BSDataTable IsResponsive="true" IsStriped="true" IsSmall="true" FetchItems="FetchItems" PaginationBottom="true" RowsPerPage="rowsPerPage" Context="item">
+            <BSDataTable IsHoverable="true" IsResponsive="true" IsStriped="true" IsSmall="true" FetchItems="FetchItems" PaginationBottom="true" RowsPerPage="rowsPerPage" Context="item" @ref="table">
                 <Header>
-                    <BSDataTableHead TValue="CertificateItem" Sortable="true" Column="@(nameof(CertificateItem.Name))" ColumnFilter="true" Class="form-control-sm">Name</BSDataTableHead>
-                    <BSDataTableHead TValue="CertificateItem">Actions</BSDataTableHead>
+                    <BSDataTableHead TValue="CertificateDefinition" Sortable="true" Column="@(nameof(CertificateDefinition.Alias))">Alias</BSDataTableHead>
+                    <BSDataTableHead TValue="CertificateDefinition" Sortable="true" Column="@(nameof(CertificateDefinition.NotAfter))">Expires</BSDataTableHead>
+                    <BSDataTableHead TValue="CertificateDefinition" Class="col-1">Actions</BSDataTableHead>
                 </Header>
                 <Body>
                     <BSDataTableRow>
                         @{
-                            string certificateEditUrl = $"/certificates/view/{Uri.EscapeDataString(item.Name)}";
-                            string certificateDeleteUrl = $"/certificates/delete/{Uri.EscapeDataString(item.Name)}";
+                            string certificateViewUrl = $"/certificates/view/{Uri.EscapeDataString(item.Alias)}";
                         }
-                        <BSTD>@item.Name</BSTD>
                         <BSTD>
-                            <BSLink Url="@certificateEditUrl">View</BSLink>
-                            <BSLink Url="@certificateDeleteUrl" Class="text-danger ms-3">Delete</BSLink>
+                            @item.Alias
+                            @if (item.HasPrivateKey)
+                            {
+                                <BSBadge IsPill="true" Color="BSColor.Secondary" title="Known private key" Class="ms-2"><i class="fa-solid fa-key" ></i></BSBadge>
+                            }
+                        </BSTD>
+                        <BSTD>
+                            @item.NotAfter.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                            @if (item.NotAfter < DateTimeOffset.Now)
+                            {
+                                <BSBadge Color="BSColor.Danger" IsPill="true" Class="ms-2">Expired</BSBadge>
+                            }
+                            else if (@item.NotAfter < DateTimeOffset.Now.AddMonths(1))
+                            {
+                                <BSBadge Color="BSColor.Warning" IsPill="true" Class="ms-2">Expires soon</BSBadge>
+                            }
+                        </BSTD>
+                        <BSTD Class="col-1">
+                            <BSLink Url="@certificateViewUrl" tooltip="View details"><i class="fa-solid fa-circle-info"></i></BSLink>
                         </BSTD>
                     </BSDataTableRow>
                 </Body>
@@ -69,11 +89,15 @@
 </div>
 
 @code {
-    private List<CertificateItem> certificates = new List<CertificateItem>();
+    private CertificateDefinition[] certificates = new CertificateDefinition[0];
+
+    private BSDataTable<CertificateDefinition>? table;
 
     private bool isLoading = true;
 
     private const int rowsPerPage = 20;
+
+    private string? customFilter = null;
 
     private string? errorMsg;
 
@@ -89,7 +113,7 @@
         isLoading = true;
         try
         {
-            HttpResponseMessage msg = await HttpClient.GetAsync("certificate/");
+            HttpResponseMessage msg = await HttpClient.GetAsync("api/certificate/");
 
             if (msg.StatusCode == System.Net.HttpStatusCode.BadRequest)
             {
@@ -100,7 +124,7 @@
 
             msg.EnsureSuccessStatusCode();
 
-            certificates = (await msg.Content.ReadFromJsonAsync<string[]>())!.Select(p => new CertificateItem(p)).ToList();
+            certificates = (await msg.Content.ReadFromJsonAsync<CertificateDefinition[]>())!;
         }
         catch (Exception ex)
         {
@@ -118,15 +142,19 @@
 
     }
 
-    private Task<(IEnumerable<CertificateItem>, int)> FetchItems(DataRequest dataRequest)
+    private void CustomFilter(string e)
     {
-        IEnumerable<CertificateItem> data = this.certificates;
+        customFilter = e;
+        table?.Refresh();
+    }
 
-        if (dataRequest.FilterColumnProperty != null && dataRequest.Filter != null)
+    private Task<(IEnumerable<CertificateDefinition>, int)> FetchItems(DataRequest dataRequest)
+    {
+        IEnumerable<CertificateDefinition> data = this.certificates;
+
+        if (!string.IsNullOrEmpty(customFilter))
         {
-            data = data.Where(c =>
-                    (dataRequest.FilterColumn == nameof(CertificateItem.Name) && c.Name.Contains(dataRequest.Filter, StringComparison.InvariantCultureIgnoreCase))
-                );
+            data = data.Where(c => c.Alias.Contains(customFilter, StringComparison.InvariantCultureIgnoreCase));
         }
 
         data = data.ToList();
@@ -135,14 +163,12 @@
         if (dataRequest.SortColumnProperty != null)
         {
             if (dataRequest.Descending)
-                data = data.OrderByDescending(c => c.Name);
+                data = data.OrderByDescending(c => dataRequest.SortColumnProperty.GetValue(c));
             else
-                data = data.OrderBy(c => c.Name);
+                data = data.OrderBy(c => dataRequest.SortColumnProperty.GetValue(c));
         }
 
         data = data.Skip(dataRequest.Page * rowsPerPage).Take(rowsPerPage).ToList();
         return Task.FromResult((data, count));
     }
-
-    private record CertificateItem(string Name);
 }

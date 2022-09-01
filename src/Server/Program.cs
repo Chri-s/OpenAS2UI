@@ -17,9 +17,10 @@ namespace OpenAS2UI
             builder.Services.AddControllersWithViews();
             builder.Services.AddRazorPages();
 
+            string url = builder.Configuration["OpenAS2:Url"];
+
             builder.Services.AddSingleton(sp =>
-            {
-                string url = builder.Configuration["OpenAS2:Url"];
+            {   
                 string user = builder.Configuration["OpenAS2:UserId"];
                 string password = builder.Configuration["OpenAS2:Password"];
                 string auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{user}:{password}"));
@@ -29,6 +30,12 @@ namespace OpenAS2UI
                 return httpClient;
             });
             builder.Services.AddTransient<DataService>();
+            builder.Services.AddTransient<OpenAs2Client>(s =>
+            {
+                OpenAs2Client client = new OpenAs2Client(s.GetRequiredService<HttpClient>());
+                client.BaseUrl = url;
+                return client;
+            });
             
 
             if (!string.IsNullOrEmpty(builder.Configuration.GetConnectionString("LogConnection")))

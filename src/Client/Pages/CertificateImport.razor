@@ -1,0 +1,274 @@
+﻿@page "/certificates/import/"
+@using System.Text
+@using System.Security.Cryptography
+
+@using System.Text.Encodings.Web
+@using System.Net
+@using OpenAS2UI.Client.Shared
+@using global::FluentValidation
+@using BlazorStrap.Extensions.FluentValidation
+@inject HttpClient HttpClient
+@inject ClipboardService ClipboardService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+
+<div class="
+        d-flex
+        justify-content-between
+        flex-wrap flex-md-nowrap
+        align-items-center
+        pt-3
+        pb-2
+        mb-3
+        border-bottom
+      ">
+    <h1>Import Certificate</h1>
+</div>
+
+<BSModal DataId="errorModal" @ref="errorModal">
+    <BSModalHeader>Error</BSModalHeader>
+    <BSModalContent>
+        <BSAlert Color="BSColor.Danger">@errorModalMsg</BSAlert>
+    </BSModalContent>
+    <BSModalFooter>
+        <BSButton Target="errorModal" Color="BSColor.Primary">Close</BSButton>
+    </BSModalFooter>
+</BSModal>
+
+<div class="mb-3">What do you want to import?</div>
+
+<BSNav IsPills="true" Class="mb-3">
+    <BSNavItem IsActive="isCertificateActive" OnClick="OnCertificateClick" IsDisabled="isImporting"><i class="fa-solid fa-certificate"></i> Certificate</BSNavItem>
+    <BSNavItem IsActive="isPrivateKeyActive" OnClick="OnPrivateKeyClick" IsDisabled="isImporting"><i class="fa-solid fa-key"></i> Private key</BSNavItem>
+</BSNav>
+
+@if (isCertificateActive ?? false)
+{
+    <BSForm Model="importModel" IsRow="true" OnValidSubmit="ImportCertificate">
+        <FluentValidator TValidator="CertificateImportValidator" />
+        <div class="mb-3">
+            <BSLabel>Alias:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="importModel.Alias" ValidateOnInput="true" aria-describedby="nameHelp" ValidateOnChange="false" IsDisabled="isImporting" />
+            <BSFeedback For="@(() => importModel.Alias)" />
+            <div id="nameHelp" class="form-text">The alias is only used internally and not send to the partner.</div>
+        </div>
+        <div class="mb-3">
+            <BSLabel>Certificate file (base64-encoded):</BSLabel>
+            <BSInputFile OnChange="OnCertificateFileChange" ValidWhen="@(() => importModel.Certificate)" IsDisabled="isImporting" />
+            <BSFeedback For="() => importModel.Certificate" />
+        </div>
+        <div class="mb-3">
+            <BSButton IsSubmit="true" Color="BSColor.Primary" IsDisabled="isImporting">Import certificate</BSButton>
+            @if (isImporting)
+            {
+                <SpinnerInline Message="Importing..." />
+            }
+        </div>
+    </BSForm>
+}
+@if (isPrivateKeyActive ?? false)
+{
+    <BSForm Model="importModel" IsRow="true" OnValidSubmit="ImportPkcs12Container">
+        <FluentValidator TValidator="PrivateKeyImportValidator" />
+        <div class="mb-3">
+            <BSLabel>Alias:</BSLabel>
+            <BSInput InputType="InputType.Text" @bind-Value="importModel.Alias" ValidateOnInput="true" aria-describedby="nameHelp" ValidateOnChange="false" IsDisabled="isImporting" />
+            <BSFeedback For="@(() => importModel.Alias)" />
+            <div id="nameHelp" class="form-text">The alias is only used internally and not send to the partner.</div>
+        </div>
+        <div class="mb-3">
+            <BSLabel>Private key file (.p12-file):</BSLabel>
+            <BSInputFile OnChange="OnPkcs12FileChange" ValidWhen="@(() => importModel.Pkcs12Container)" IsDisabled="isImporting" />
+            <BSFeedback For="() => importModel.Pkcs12Container" />
+        </div>
+        <div class="mb-3">
+            <BSLabel>Password for private key file:</BSLabel>
+            <BSInput InputType="InputType.Password" @bind-Value="importModel.Password" ValidateOnInput="true" aria-describedby="nameHelp" ValidateOnChange="false" IsDisabled="isImporting" />
+            <BSFeedback For="@(() => importModel.Password)" />
+        </div>
+        <div class="mb-3">
+            <BSButton IsSubmit="true" Color="BSColor.Primary" IsDisabled="isImporting">Import private key</BSButton>
+            @if (isImporting)
+            {
+                <SpinnerInline Message="Importing..." />
+            }
+        </div>
+    </BSForm>
+}
+<div class="mb-3">
+    <BSLink Url="/certificates/"><i class="fa-solid fa-arrow-left"></i> Back to certificate list</BSLink>
+</div>
+
+@code {
+    private string? errorModalMsg;
+
+    private bool? isCertificateActive = true;
+    private bool? isPrivateKeyActive;
+
+    private BSModal? errorModal;
+
+    private bool isImporting = false;
+
+    private CertificateImportDefinition importModel = new CertificateImportDefinition();
+
+    private void OnCertificateClick()
+    {
+        isCertificateActive = true;
+        isPrivateKeyActive = false;
+    }
+
+    private void OnPrivateKeyClick()
+    {
+        isCertificateActive = false;
+        isPrivateKeyActive = true;
+    }
+
+    private async Task OnCertificateFileChange(InputFileChangeEventArgs e)
+    {
+        isCertificateActive = true;
+        if (e.FileCount == 0)
+        {
+            importModel.Certificate = new byte[0];
+            StateHasChanged();
+            return;
+        }
+
+        if (e.File.Size > 1_000_000) // Can a certificate have 1 MB?
+        {
+            errorModalMsg = "Please select a certificate smaller than 1 megabyte.";
+
+            await errorModal!.ShowAsync();
+            return;
+        }
+
+        try
+        {
+            byte[] data = new byte[e.File.Size];
+            using (Stream stream = e.File.OpenReadStream())
+            {
+                await stream.ReadAsync(data);
+            }
+            importModel.Certificate = data;
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorModalMsg = "Error reading certificate: " + ex.Message;
+
+            await errorModal!.ShowAsync();
+            return;
+        }
+    }
+
+    private async Task OnPkcs12FileChange(InputFileChangeEventArgs e)
+    {
+        isPrivateKeyActive = true;
+        if (e.FileCount == 0)
+        {
+            importModel.Pkcs12Container = new byte[0];
+            StateHasChanged();
+            return;
+        }
+
+        if (e.File.Size > 1_000_000) // Can a private key have 1 MB?
+        {
+            errorModalMsg = "Please select a private key smaller than 1 megabyte.";
+
+            await errorModal!.ShowAsync();
+            return;
+        }
+
+        try
+        {
+            byte[] data = new byte[e.File.Size];
+            using (Stream stream = e.File.OpenReadStream())
+            {
+                await stream.ReadAsync(data);
+            }
+            importModel.Pkcs12Container = data;
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorModalMsg = "Error reading private key: " + ex.Message;
+
+            await errorModal!.ShowAsync();
+            return;
+        }
+    }
+
+    private async Task ImportCertificate()
+    {
+        importModel.Password = null;
+        importModel.Pkcs12Container = null;
+
+        await ImportModel();
+    }
+
+    private async Task ImportPkcs12Container()
+    {
+        importModel.Certificate = null;
+
+        await ImportModel();
+    }
+
+    private async Task ImportModel()
+    {
+        isImporting = true;
+
+        try
+        {
+            HttpResponseMessage response = await HttpClient.PostAsJsonAsync("api/certificate/", importModel);
+
+            if (response.StatusCode == HttpStatusCode.OK)
+            {
+                CertificateDefinition certificate = (await response.Content.ReadFromJsonAsync<CertificateDefinition>())!;
+
+                NavigationManager.NavigateTo("/certificates/view/" + Uri.EscapeDataString(certificate.Alias));
+                return;
+            }
+
+            if (response.StatusCode == HttpStatusCode.InternalServerError)
+            {
+                errorModalMsg = "An error occurred: " + await response.Content.ReadAsStringAsync();
+                await this.errorModal!.ShowAsync();
+                return;
+            }
+
+            // All other errors return an ErrorObject
+            ErrorObject obj = (await response.Content.ReadFromJsonAsync<ErrorObject>())!;
+            errorModalMsg = obj.ErrorMessage;
+            await errorModal!.ShowAsync();
+            return;
+        }
+        catch (Exception ex)
+        {
+            errorModalMsg = ex.Message;
+            await errorModal!.ShowAsync();
+        }
+        finally
+        {
+            isImporting = false;
+        }
+    }
+
+    private class CertificateImportValidator : AbstractValidator<CertificateImportDefinition>
+    {
+        public CertificateImportValidator()
+        {
+            RuleFor(export => export.Alias).NotEmpty().WithMessage("You must enter an alias.");
+            RuleFor(export => export.Certificate).Must(b => b != null && b.Length > 0).WithMessage("You must select a non-empty certificate file.");
+        }
+    }
+
+    private class PrivateKeyImportValidator : AbstractValidator<CertificateImportDefinition>
+    {
+        public PrivateKeyImportValidator()
+        {
+            RuleFor(export => export.Alias).NotEmpty().WithMessage("You must enter an alias.");
+            RuleFor(export => export.Pkcs12Container).Must(b => b != null && b.Length > 0).WithMessage("You must select a non-empty private key file.");
+        }
+    }
+}

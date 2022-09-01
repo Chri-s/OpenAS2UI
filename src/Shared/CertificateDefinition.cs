@@ -12,17 +12,23 @@ namespace OpenAS2UI.Shared
         [JsonPropertyName("alias")]
         public string Alias { get; set; } = string.Empty;
 
-        [JsonPropertyName("data")]
-        public byte[] Data { get; set; } = new byte[0];
+        [JsonPropertyName("publicKey")]
+        public byte[] PublicKey { get; set; } = new byte[0];
 
+        [JsonPropertyName("issuer")]
         public string? Issuer { get; set; }
 
-        public DateTime NotBefore { get; set; }
+        [JsonPropertyName("subject")]
+        public string? Subject { get; set; }
 
-        public DateTime NotAfter { get; set; }
+        public DateTimeOffset NotBefore { get; set; }
+
+        public DateTimeOffset NotAfter { get; set; }
+
+        public bool HasPrivateKey { get; set; }
 
         public string? SerialNumber { get; set; }
 
-        public string? Thumbprint { get; set; }
+        public List<PartnerDefinition>? UsedBy { get; set; }
     }
 }
