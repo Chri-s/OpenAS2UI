@@ -3,19 +3,21 @@
   "defaultProvider": "cdnjs",
   "libraries": [
     {
-      "provider": "jsdelivr",
-      "library": "@fortawesome/fontawesome-free@6.1.1",
-      "destination": "wwwroot/lib/fortawesome/fontawesome-free/"
-    },
-    {
-      "library": "bootstrap@5.2.0",
-      "destination": "wwwroot/lib/bootstrap/"
-    },
-    {
       "library": "bootswatch@5.2.0",
       "destination": "wwwroot/lib/bootswatch/",
       "files": [
         "cerulean/bootstrap.min.css"
+      ]
+    },
+    {
+      "provider": "jsdelivr",
+      "library": "@fortawesome/fontawesome-free@6.2.0",
+      "destination": "wwwroot/lib/fortawesome/fontawesome-free/",
+      "files": [
+        "css/fontawesome.min.css",
+        "css/solid.min.css",
+        "webfonts/fa-solid-900.ttf",
+        "webfonts/fa-solid-900.woff2"
       ]
     }
   ]

@@ -75,14 +75,6 @@
             this._toggler!.CollapseParent = _collapse;
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        await base.OnAfterRenderAsync(firstRender);
-
-        if (firstRender)
-            await BlazorStrap.SetBootstrapCss(Theme.Cerulean, "5.2.0");
-    }
-
     public async ValueTask DisposeAsync()
     {
         if (hubConnection is not null)
